@@ -126,6 +126,12 @@
 //! | Rust type                             | Postgres type(s)                                     |
 //! |---------------------------------------|------------------------------------------------------|
 //! | `bit_vec::BitVec`                     | BIT, VARBIT                                          |
+//! 
+//! ### ['postgis']
+//! 
+//! | Rust type                             | Postgres type(s)                                     |
+//! |---------------------------------------|------------------------------------------------------|
+//! | [`postgis::ewkb::Geometry`]           | GEOMETRY                                             |
 //!
 //! ### [`json`](https://crates.io/crates/serde_json)
 //!
@@ -270,6 +276,9 @@ mod mac_address;
 
 #[cfg(feature = "bit-vec")]
 mod bit_vec;
+
+#[cfg(feature = "postgis")]
+mod postgis;
 
 pub use array::PgHasArrayType;
 pub use citext::PgCiText;
