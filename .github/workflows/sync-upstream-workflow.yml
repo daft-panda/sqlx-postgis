@@ -1,0 +1,90 @@
+name: Sync with Upstream Releases
+
+on:
+  # Run daily to check for new releases
+  schedule:
+    - cron: "0 0 * * *" # Runs at midnight every day
+
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all branches and tags
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+
+      - name: Add upstream remote
+        run: |
+          # Replace with your upstream repository
+          UPSTREAM_REPO="https://github.com/launchbadge/sqlx.git"
+          git remote add upstream $UPSTREAM_REPO
+          git fetch upstream
+
+      - name: Get latest upstream version
+        id: get_version
+        run: |
+          # Get latest tag from upstream
+          LATEST_TAG=$(git ls-remote --tags --refs upstream | sort -t '/' -k 3 -V | tail -n 1 | sed 's/.*refs\/tags\///')
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+
+          # Check if we already have this tag in our fork
+          if git tag | grep -q "^$LATEST_TAG$"; then
+            echo "New version not found. Already synced with $LATEST_TAG"
+            echo "NEW_VERSION=false" >> $GITHUB_ENV
+          else
+            echo "New version $LATEST_TAG found!"
+            echo "NEW_VERSION=true" >> $GITHUB_ENV
+          fi
+
+      - name: Create sync branch
+        if: env.NEW_VERSION == 'true'
+        run: |
+          BRANCH_NAME="sync-upstream-$LATEST_TAG"
+          git checkout -b $BRANCH_NAME
+
+          # Get the commit hash that the tag points to
+          TAG_COMMIT=$(git rev-list -n 1 upstream/$LATEST_TAG || git rev-list -n 1 upstream/tags/$LATEST_TAG)
+
+          # Hard reset to that commit
+          git reset --hard $TAG_COMMIT
+
+          # Push the branch to origin
+          git push -f origin $BRANCH_NAME
+
+      - name: Create Pull Request
+        if: env.NEW_VERSION == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Sync with upstream release ${{ env.LATEST_TAG }}"
+          title: "Sync with upstream release ${{ env.LATEST_TAG }}"
+          body: |
+            This PR syncs with the upstream repository's release version ${{ env.LATEST_TAG }}.
+
+            Changes included in this sync:
+            - Automated sync by GitHub Action
+          branch: sync-upstream-${{ env.LATEST_TAG }}
+          base: main
+
+      - name: Auto-merge if possible
+        if: env.NEW_VERSION == 'true'
+        run: |
+          PR_URL=$(gh pr list --head sync-upstream-${{ env.LATEST_TAG }} --json url --jq '.[0].url')
+          if [ -n "$PR_URL" ]; then
+            # Try to auto-merge - this will only succeed if there are no conflicts and branch protection rules allow it
+            echo "Attempting to merge PR: $PR_URL"
+            gh pr merge $PR_URL --auto --merge
+            echo "Note: PR auto-merge will only succeed if there are no conflicts and branch protection rules allow it"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
